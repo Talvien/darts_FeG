@@ -1,0 +1,14 @@
+[project]
+name = "test"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.1.0",
+    "flask-bcrypt>=1.0.1",
+    "flask-cors>=5.0.0",
+    "flask-migrate>=4.1.0",
+    "sqlalchemy>=2.0.37",
+    "sqlalchemy-serializer>=1.4.12",
+]
