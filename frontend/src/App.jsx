@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+// src/App.jsx
+import React, { useState } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import { CssBaseline } from '@mui/material';
+import { CssBaseline, Box } from '@mui/material';
 import Navigation from './assets/Navigation';
 
 function App() {
@@ -21,16 +22,14 @@ function App() {
     <ThemeProvider theme={theme}>
       <Router>
         <CssBaseline /> {/* Normalize styles */}
-        <Navigation darkMode={darkMode} onToggleDarkMode={handleToggle} />
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+          <Navigation darkMode={darkMode} onToggleDarkMode={handleToggle} />
+        </Box>
       </Router>
     </ThemeProvider>
   );
 }
 
 export default App;
-
-// src/App.js
-
-
 
 
