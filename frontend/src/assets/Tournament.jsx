@@ -74,7 +74,6 @@ const Tournament = () => {
     },
     validationSchema: Yup.object({
       tournamentName: Yup.string().required('Tournament Name is required'),
-      newPlayerName: Yup.string().required('Player Name is required'),
       selectedFormat: Yup.string().required('Tournament Format is required'),
       numberOfGroups: Yup.string().required('Number of Groups is required'),
     }),
@@ -107,7 +106,7 @@ const Tournament = () => {
         const createdTournament = await response.json();
         resetForm();
         setSelectedPlayers([]);
-        navigate(`/matches/${createdTournament.tournament_id}`); // Navigate to the matches screen
+        navigate(`/tournaments/${createdTournament.tournament_id}`); // Navigate to the matches screen
       } catch (error) {
         console.error('Error creating tournament:', error);
       }

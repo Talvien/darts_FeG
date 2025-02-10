@@ -1,10 +1,8 @@
-// src/App.js
-import React, { useState } from 'react';
+import React, { useState } from 'react'
 import { BrowserRouter as Router } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
-import Navigation from './components/Navigation';
-import TournamentMatched from './components/TournamentMatches';
+import Navigation from './assets/Navigation';
 
 function App() {
   const [darkMode, setDarkMode] = useState(false);
@@ -30,3 +28,9 @@ function App() {
 }
 
 export default App;
+
+// src/App.js
+
+
+
+
