@@ -35,17 +35,27 @@ class Tournament(db.Model):
 
     format = db.relationship('TournamentFormat', backref='tournaments')
     rounds = db.relationship('Round', backref='tournament', cascade='all, delete-orphan')
+    groups = db.relationship('Group', backref='tournament', cascade='all, delete-orphan')
 
-class TournamentPlayerlist(db.Model):
-    __tablename__ = 'tournament_playerlist'
+class Group(db.Model):
+    __tablename__ = 'groups'
 
-    playerlist_id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, primary_key=True)
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.tournament_id'))
-    player_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
-    group_id = db.Column(db.Integer)
+    group_number = db.Column(db.Integer, nullable=False, server_default = '1')
+    group_name = db.Column(db.String(80), nullable=False)
 
-    tournament = db.relationship('Tournament', backref='playerlists')
-    player = db.relationship('Player', backref='tournament_entries')
+    players = db.relationship('GroupPlayer', backref='group', cascade='all, delete-orphan')
+    matches = db.relationship('Match', backref='group', cascade='all, delete-orphan')  # Add this line
+
+class GroupPlayer(db.Model):
+    __tablename__ = 'group_players'
+
+    group_player_id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('groups.group_id'))
+    player_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
+
+    player = db.relationship('Player', backref='group_entries')
 
 class Round(db.Model):
     __tablename__ = 'rounds'
@@ -62,6 +72,7 @@ class Match(db.Model):
     match_id = db.Column(db.Integer, primary_key=True)
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.tournament_id'))
     round_id = db.Column(db.Integer, db.ForeignKey('rounds.round_id'))
+    group_id = db.Column(db.Integer, db.ForeignKey('groups.group_id'), nullable=True)  # Optional relationship with Group
     player1_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
     player2_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
     score_player1 = db.Column(db.Integer)
@@ -71,3 +82,5 @@ class Match(db.Model):
     tournament = db.relationship('Tournament', backref='matches')
     player1 = db.relationship('Player', foreign_keys=[player1_id], backref='matches_as_player1')
     player2 = db.relationship('Player', foreign_keys=[player2_id], backref='matches_as_player2')
+
+    winner = db.relationship('Player', foreign_keys=[winner_id])

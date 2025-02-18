@@ -4,6 +4,8 @@ import { AppBar, Tabs, Tab, Toolbar, Typography, Switch, Container } from '@mui/
 import { Link, Routes, Route } from 'react-router-dom';
 import PlayerList from './PlayerList'; // Import your PlayerList component
 import Tournament from './Tournament'; // Import your Tournament component
+import TournamentRound from './TournamentRound';
+import TournamentWinner from './TournamentWinner'
 
 function Navigation({ darkMode, onToggleDarkMode }) {
   const [value, setValue] = useState(0); // State for the selected tab
@@ -53,6 +55,8 @@ function Navigation({ darkMode, onToggleDarkMode }) {
       <Container maxWidth="md" style={{ marginTop: '20px' }}>
         <Routes>
           <Route path="/" element={<Tournament />} /> {/* Set Tournament as the starting page */}
+          <Route path="/tournaments/:tournamentId" element={<TournamentRound />} />
+          <Route path="/tournaments/:tournamentId/winner" element={<TournamentWinner />} />
           <Route path="/player-management" element={<PlayerList />} />
         </Routes>
       </Container>

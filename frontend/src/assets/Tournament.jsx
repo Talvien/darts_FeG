@@ -78,8 +78,8 @@ const Tournament = () => {
       numberOfGroups: Yup.string().required('Number of Groups is required'),
     }),
     onSubmit: async (values, { resetForm }) => {
-      if (!values.tournamentName || selectedPlayers.length === 0) {
-        alert('Please enter a tournament name and select at least one player.');
+      if (!values.tournamentName || selectedPlayers.length < 2) {
+        alert('Bitte Turniernamen eingeben und mindestens zwei Spieler auswählen.');
         return;
       }
 
@@ -91,7 +91,7 @@ const Tournament = () => {
       };
 
       try {
-        const response = await fetch('/api/tournaments', {
+        const response = await fetch('/api/create-tournament', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -104,6 +104,8 @@ const Tournament = () => {
         }
 
         const createdTournament = await response.json();
+        console.log('Tournament created:', createdTournament); // Add log here
+
         resetForm();
         setSelectedPlayers([]);
         navigate(`/tournaments/${createdTournament.tournament_id}`); // Navigate to the matches screen
@@ -113,7 +115,7 @@ const Tournament = () => {
     },
   });
 
-  const handleCreatePlayer = async () => {
+  async function handleCreatePlayer() {
     if (formik.values.newPlayerName.trim() === '') return;
 
     const newPlayer = { name: formik.values.newPlayerName };
@@ -131,12 +133,13 @@ const Tournament = () => {
       }
 
       const addedPlayer = await response.json();
+      console.log('Player created:', addedPlayer); // Add log here
       setPlayers((prevPlayers) => [...prevPlayers, addedPlayer]);
       formik.setFieldValue('newPlayerName', '');
     } catch (error) {
       console.error('Error creating player:', error);
     }
-  };
+  }
 
   return (
     <Box>
