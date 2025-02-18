@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from models import db, Player, Tournament, TournamentFormat, Match, Round, Group, GroupPlayer
+from models import db, Player, Tournament, TournamentFormat, Match, Round, Group
 import tournament
 
 app = Flask(__name__)

@@ -131,10 +131,6 @@ def determine_advancements(groups, tournament_id, round_number, ranks=2):
     return advancing_players
 
 
-
-
-
-
 def create_next_round_matches(advancing_players, round_number, tournament_id):
     next_round = Round(tournament_id=tournament_id, round_number=round_number)
     db.session.add(next_round)
