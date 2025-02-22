@@ -78,6 +78,31 @@ wheels = [
 ]
 
 [[package]]
+name = "darts-duel-builder"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "flask" },
+    { name = "flask-bcrypt" },
+    { name = "flask-cors" },
+    { name = "flask-migrate" },
+    { name = "pytz" },
+    { name = "sqlalchemy" },
+    { name = "sqlalchemy-serializer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "flask", specifier = ">=3.1.0" },
+    { name = "flask-bcrypt", specifier = ">=1.0.1" },
+    { name = "flask-cors", specifier = ">=5.0.0" },
+    { name = "flask-migrate", specifier = ">=4.1.0" },
+    { name = "pytz", specifier = ">=2025.1" },
+    { name = "sqlalchemy", specifier = ">=2.0.37" },
+    { name = "sqlalchemy-serializer", specifier = ">=1.4.12" },
+]
+
+[[package]]
 name = "flask"
 version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -349,31 +374,6 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/86/c9/8fb4469d12306a4bd0ab787fd62dc265adb35a068f5f8f9c5c9f69a9a930/SQLAlchemy-serializer-1.4.12.tar.gz", hash = "sha256:5e1f83fc6d8a4f7618100c1b9a6af949498210756b974527ec3c8c1ec7e1300f", size = 16739 }
-
-[[package]]
-name = "test"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "flask" },
-    { name = "flask-bcrypt" },
-    { name = "flask-cors" },
-    { name = "flask-migrate" },
-    { name = "pytz" },
-    { name = "sqlalchemy" },
-    { name = "sqlalchemy-serializer" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "flask", specifier = ">=3.1.0" },
-    { name = "flask-bcrypt", specifier = ">=1.0.1" },
-    { name = "flask-cors", specifier = ">=5.0.0" },
-    { name = "flask-migrate", specifier = ">=4.1.0" },
-    { name = "pytz", specifier = ">=2025.1" },
-    { name = "sqlalchemy", specifier = ">=2.0.37" },
-    { name = "sqlalchemy-serializer", specifier = ">=1.4.12" },
-]
 
 [[package]]
 name = "typing-extensions"

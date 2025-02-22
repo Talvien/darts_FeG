@@ -7,8 +7,10 @@ import random
 
 def create_tournament(data):
     name = data['name']
-    format_id = data['format_id']
+    group_stage_format_id = data['group_stage_format_id']
+    knock_out_stage_format_id = data['knock_out_stage_format_id']
     num_groups = data.get('num_groups', 'Auto')
+    advancing_players = data.get('advancing_players', 2)
     selected_player_ids = data['players']
     
 
@@ -23,7 +25,7 @@ def create_tournament(data):
         date = datetime.now(cet).date()
 
         # Create a new tournament
-        tournament = Tournament(name=name, format_id=format_id, date=date)
+        tournament = Tournament(name=name, group_stage_format_id=group_stage_format_id, knock_out_stage_format_id=knock_out_stage_format_id, date=date, advancing_players=advancing_players)
         db.session.add(tournament)
         db.session.flush()  # Flush to get the tournament ID
 
@@ -33,16 +35,12 @@ def create_tournament(data):
         db.session.flush()  # Flush to get the round ID
 
         # Apply specific logic based on the format
-        if format_id == '3':
-            if num_groups == 'Auto':
-                create_groups_auto(tournament.tournament_id, selected_players, first_round.round_id)
-            else:
-                create_groups_manual(tournament.tournament_id, selected_players, num_groups, first_round.round_id)
+        if group_stage_format_id == '1':
+            create_knockout_stage(tournament.tournament_id, selected_players, first_round.round_number)
+        elif num_groups == 'Auto':
+            create_groups_auto(tournament.tournament_id, selected_players, first_round.round_id, group_stage_format_id)
         else:
-            if num_groups == 'Auto':
-                create_groups_auto(tournament.tournament_id, selected_players, first_round.round_id)
-            else:
-                create_groups_manual(tournament.tournament_id, selected_players, num_groups, first_round.round_id)
+            create_groups(tournament.tournament_id, selected_players, num_groups, first_round.round_id, group_stage_format_id)
 
         db.session.commit()  # Commit transaction
         return tournament.tournament_id
@@ -58,23 +56,88 @@ def create_tournament(data):
     except Exception as e:
         print(f"Error: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+    
+def create_knockout_stage(tournament_id, players, round_number, num_advancing_players):
+    # Create matches for the knockout stage
+    advancing_players = []
+    current_round = Round.query.filter_by(tournament_id=tournament_id, round_number=round_number).first()
+    print(f"Current Round: {current_round}")
 
-def create_groups_auto(tournament_id, players, round_id):
+    if num_advancing_players:
+        print(f"Round Number: {round_number}")
+
+        if current_round is not None:
+            next_round_number = round_number + 1
+            next_round = Round(tournament_id=tournament_id, round_number=next_round_number)
+            db.session.add(next_round)
+            db.session.flush()  # Flush to get the next_round.round_id
+
+            print(f"Next Round: {next_round} - Number: {next_round_number}")
+
+            matches_in_round = Match.query.filter_by(round_id=current_round.round_id).all()
+            print(f"Matches in Current Round: {matches_in_round}")
+
+            groups = Group.query.filter_by(tournament_id=tournament_id).all()
+            group_players = []
+
+            for group in groups:
+                group_winners = []
+                for gp in group.players:
+                    player = gp.player
+                    matches_won = sum(1 for match in matches_in_round if match.winner_id == player.player_id)
+                    group_winners.append({
+                        "player": player,
+                        "matches_won": matches_won,
+                        "group_id": group.group_id
+                    })
+                sorted_winners = sorted(group_winners, key=lambda p: p['matches_won'], reverse=True)
+                group_players.append(sorted_winners[:num_advancing_players])  # Top players from each group
+                print(f"Group Winners for Group {group.group_id}: {sorted_winners[:num_advancing_players]}")
+
+            # Ensure correct matching between groups
+            first_seeds = [(group[0]['player'], group[0]['group_id']) for group in group_players if len(group) > 0]
+            second_seeds = [(group[1]['player'], group[1]['group_id']) for group in group_players if len(group) > 1]
+
+            print(f"First Seeds: {first_seeds}")
+            print(f"Second Seeds: {second_seeds}")
+
+            # Match second seed with first seed from another group
+            for first_seed in first_seeds:
+                for second_seed in second_seeds:
+                    if first_seed[1] != second_seed[1]:  # Ensure different groups
+                        match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=second_seed[0].player_id, player2_id=first_seed[0].player_id)
+                        print(f"Match: Player 1 : {second_seed[0].player_id}, Player 2: {first_seed[0].player_id}")
+                        db.session.add(match)
+                        second_seeds.remove(second_seed)  # Remove matched second seed
+                        break
+
+            db.session.commit()
+            db.session.flush()
+    else:
+        # Randomly match players if there's no group stage
+        random.shuffle(players)
+        for i in range(0, len(players), 2):
+            if i + 1 < len(players):
+                match = Match(tournament_id=tournament_id, round_id=current_round.round_id, player1_id=players[i].player_id, player2_id=players[i + 1].player_id)
+                db.session.add(match)
+        db.session.commit()
+        db.session.flush()
+
+
+
+
+def create_groups_auto(tournament_id, players, round_id, format_id):
     num_players = len(players)
-    if num_players <= 6:
+    if num_players <= 4:
         num_groups = 1
-    elif num_players <= 12:
+    elif num_players <= 8:
         num_groups = 2
-    elif num_players <= 18:
-        num_groups = 3
     else:
         num_groups = 4
-    create_groups(tournament_id, players, num_groups, round_id)
+    create_groups(tournament_id, players, num_groups, round_id, format_id)
 
-def create_groups_manual(tournament_id, players, num_groups, round_id):
-    create_groups(tournament_id, players, num_groups, round_id)
-
-def create_groups(tournament_id, players, num_groups, round_id):
+def create_groups(tournament_id, players, num_groups, round_id, format_id):
+    print(f"Num Groups {num_groups}")
     groups = []
     for i in range(num_groups):
         group = Group(tournament_id=tournament_id, group_name=f"Gruppe {i+1}", group_number=i+1)
@@ -91,59 +154,102 @@ def create_groups(tournament_id, players, num_groups, round_id):
     db.session.flush()
 
     for group in groups:
-        create_group_matches(group, round_id)
+        create_group_matches(group, round_id, format_id), 
 
-def create_group_matches(group, round_id):
+def create_group_matches(group, round_id, format_id):
     players = group.players
-    for i in range(len(players)):
-        for j in range(i + 1, len(players)):
-            match = Match(round_id=round_id, group_id=group.group_id, player1_id=players[i].player_id, player2_id=players[j].player_id)
-            db.session.add(match)
+    if format_id != '1':
+        for i in range(len(players)):
+            for j in range(i + 1, len(players)):
+                match = Match(round_id=round_id, group_id=group.group_id, player1_id=players[i].player_id, player2_id=players[j].player_id)
+                db.session.add(match)
+                if format_id == '3':  # Each player should play each other twice
+                    reverse_match = Match(round_id=round_id, group_id=group.group_id, player1_id=players[j].player_id, player2_id=players[i].player_id)
+                    db.session.add(reverse_match)
     db.session.flush()
 
 
-
-def determine_advancements(groups, tournament_id, round_number, ranks=2):
-    advancing_players = []
-
-    # Fetch the round instance using the round_number
-    current_round = Round.query.filter_by(tournament_id=tournament_id, round_number=round_number).first()
-
-    if current_round is not None:
-        matches_in_round = Match.query.filter_by(round_id=current_round.round_id).all()
-        print(f"Matches in round {current_round.round_number}: {matches_in_round}")
-    else:
-        matches_in_round = []
-
-    for group in groups:
-        group_players = []
-        for gp in group.players:
-            player = gp.player
-            matches_won = sum(1 for match in matches_in_round if match.winner_id == player.player_id)
-            print(f"Player ID: {player.player_id}, Matches won: {matches_won}")
-            group_players.append({
-                "player": player,
-                "matches_won": matches_won
-            })
-        sorted_players = sorted(group_players, key=lambda p: p['matches_won'], reverse=True)
-        advancing_players.extend([p['player'] for p in sorted_players[:ranks]])  # Top 2 players from each group
-    print(f"Advancing Players: {advancing_players}")
-    return advancing_players
-
-
-def create_next_round_matches(advancing_players, round_number, tournament_id):
-    next_round = Round(tournament_id=tournament_id, round_number=round_number)
+def create_next_round_matches(current_round_id, tournament_id):
+    current_round = Round.query.filter_by(tournament_id=tournament_id, round_id=current_round_id).first()
+    next_round_number = current_round.round_number + 1 if current_round else 1
+    next_round = Round(tournament_id=tournament_id, round_number=next_round_number)
     db.session.add(next_round)
+    db.session.commit()
     db.session.flush()  # Flush to get the round ID
 
-    next_round_matches = []
-    for i in range(0, len(advancing_players), 2):
-        if i + 1 < len(advancing_players):
-            match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=advancing_players[i].player_id, player2_id=advancing_players[i+1].player_id)
-            next_round_matches.append(match)
-            db.session.add(match)
-    db.session.commit()
-    print(f"Created matches for round {round_number}: {next_round_matches}")
-    return next_round_matches
+    print(f"Current Round: {current_round}")
+    print(f"Next Round Number: {next_round_number}")
+    print(f"Next Round: {next_round}")
 
+    next_round_matches = []
+
+    # Determine if the tournament has a group phase
+    tournament = Tournament.query.filter_by(tournament_id=tournament_id).first()
+    has_group_phase = tournament.group_stage_format_id != '1'
+    format_id = tournament.knock_out_stage_format_id
+
+    print(f"Tournament: {tournament}")
+    print(f"Format ID: {format_id}")
+
+    # Determine advancing players from the current round
+    matches_in_current_round = Match.query.filter_by(round_id=current_round_id).all()
+    advancing_players = [
+        match.winner_id for match in matches_in_current_round if match.winner_id is not None
+    ]
+
+    print(f"Matches in Current Round: {matches_in_current_round}")
+    print(f"Advancing Players: {advancing_players}")
+
+    if format_id == 2:  # Single elimination
+        print(f"In Single Elimination jetzt: {format_id}")
+        random.shuffle(advancing_players)
+        for i in range(0, len(advancing_players), 2):
+            if i + 1 < len(advancing_players):
+                match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=advancing_players[i], player2_id=advancing_players[i+1])
+                next_round_matches.append(match)
+                db.session.add(match)
+        print(f"Single Elimination Matches: {next_round_matches}")
+    elif format_id == 3:  # Double elimination
+        winners = advancing_players
+        random.shuffle(winners)
+        for i in range(0, len(winners), 2):
+            if i + 1 < len(winners):
+                match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=winners[i], player2_id=winners[i+1])
+                next_round_matches.append(match)
+                db.session.add(match)
+        print(f"Double Elimination Matches (Winners): {next_round_matches}")
+
+        # Handle losers' bracket
+        if next_round_number > 1 or not has_group_phase:  # Consider only losses in knockout rounds if there was a group phase
+            previous_round = Round.query.filter_by(tournament_id=tournament_id, round_number=next_round_number - 1).first()
+            if previous_round:
+                previous_matches = Match.query.filter_by(round_id=previous_round.round_id).all()
+                print(f"Previous Round: {previous_round}")
+                print(f"Previous Matches: {previous_matches}")
+
+                # Track the number of losses for each player
+                player_losses = {}
+                for match in previous_matches:
+                    if match.loser_id:
+                        if match.loser_id not in player_losses:
+                            player_losses[match.loser_id] = 1
+                        else:
+                            player_losses[match.loser_id] += 1
+                print(f"Player Losses: {player_losses}")
+
+                # Collect players with only one loss
+                losers = [match.loser_id for match in previous_matches if match.loser_id and player_losses[match.loser_id] == 1]
+                random.shuffle(losers)
+                print(f"Losers: {losers}")
+
+                for i in range(0, len(losers), 2):
+                    if i + 1 < len(losers):
+                        match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=losers[i], player2_id=losers[i+1])
+                        next_round_matches.append(match)
+                        db.session.add(match)
+        print(f"Double Elimination Matches (Losers): {next_round_matches}")
+
+    db.session.commit()
+    print(f"Created matches for round {next_round_number}: {next_round_matches}")
+    return next_round_matches
 

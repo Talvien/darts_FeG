@@ -58,6 +58,29 @@ function PlayerList() {
     setSelectedPlayer(event.target.value); // Update the selected player
   };
 
+  const handleDeletePlayer = async () => {
+    if (!selectedPlayer) {
+      setError('Please select a player to delete.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/players/${selectedPlayer}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete player');
+      }
+
+      setPlayers((prevPlayers) => prevPlayers.filter(player => player.player_id !== selectedPlayer));
+      setSelectedPlayer(''); // Clear the selected player
+      setError(''); // Clear any error messages
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
   return (
     <div>
       <h2>Spielerliste</h2>
@@ -78,6 +101,15 @@ function PlayerList() {
           ))}
         </Select>
       </FormControl>
+
+      <Button 
+        variant="contained" 
+        color="secondary" 
+        onClick={handleDeletePlayer}
+        style={{ marginBottom: '20px' }} // Add margin to separate from form
+      >
+        Spieler löschen
+      </Button>
 
       <form onSubmit={handleAddPlayer}>
         <TextField

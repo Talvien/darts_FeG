@@ -71,7 +71,9 @@ const TournamentRound = () => {
       setError('Es sind noch nicht alle Gewinner ausgewählt.');
       return;
     }
-
+    if (matches.length === 1) {
+      navigate(`/tournaments/${tournamentId}/winner`);
+    } else {
     try {
       const response = await fetch(`/api/next-round/${tournamentId}`, {
         method: 'POST',
@@ -88,17 +90,18 @@ const TournamentRound = () => {
       console.log('Next round matches created:', result.matches);
 
       // Check if the tournament is over
-      if (result.matches.length > 0) {
+      
         // Update the round state to trigger refresh
         fetchMatches(round + 1);
         setRound(prevRound => prevRound + 1)
         
-      } else {
-        navigate(`/tournaments/${tournamentId}/winner`);
-      }
+      
+        
+      
     } catch (error) {
       console.error('Error creating next round matches:', error);
     }
+  }
   };
 
 
@@ -147,7 +150,7 @@ const TournamentRound = () => {
 
       <Box sx={{ mt: 2, display: 'flex', alignItems: 'center' }}>
         <Button variant="contained" color="secondary" onClick={handleNextRound}>
-          Nächste Runde
+          {matches.length === 1 ? 'Turnier beenden' : 'Nächste Runde'}
         </Button>
         {error && (
           <Typography variant="body2" color="error" sx={{ ml: 2 }}>

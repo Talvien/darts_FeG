@@ -2,7 +2,8 @@ from flask import Flask, jsonify, request
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from models import db, Player, Tournament, TournamentFormat, Match, Round, Group
+from models import db, Player, Tournament, Match, Round, Group, GroupStageFormat, KnockOutStageFormat, GroupPlayer
+from tournament import create_knockout_stage, create_next_round_matches
 import tournament
 
 app = Flask(__name__)
@@ -15,7 +16,17 @@ CORS(app)
 migrate = Migrate(app, db)
 db.init_app(app)
 
-# CRUD operations for Players
+@app.route('/api/group-stage-formats', methods=['GET'])
+def get_group_stage_formats():
+    formats = GroupStageFormat.query.all()
+    formats_data = [{'format_id': fmt.format_id, 'format_name': fmt.format_name} for fmt in formats]
+    return jsonify(formats_data)
+
+@app.route('/api/knock-out-stage-formats', methods=['GET'])
+def get_knock_out_stage_formats():
+    formats = KnockOutStageFormat.query.all()
+    formats_data = [{'format_id': fmt.format_id, 'format_name': fmt.format_name} for fmt in formats]
+    return jsonify(formats_data)
 
 @app.route('/api/create-tournament', methods=['POST'])
 def create_tournament():
@@ -43,6 +54,10 @@ def get_matches(tournament_id):
         return jsonify({"error": "No matches found for the current round"}), 404
 
     matches = Match.query.filter_by(round_id=current_round.round_id).all()
+    
+    if not matches:
+        return jsonify({"error": "No matches found for the current round"}), 404
+    
     matches_data = [{
         "match_id": match.match_id,
         "group_number": match.group.group_number if match.group else None,
@@ -52,6 +67,80 @@ def get_matches(tournament_id):
     } for match in matches]
 
     return jsonify(matches_data)
+
+
+@app.route('/api/tournaments/<int:tournament_id>/rankings', methods=['GET'])
+def get_player_rankings(tournament_id):
+    try:
+        # Step 1: Fetch the highest round number reached by each player
+        highest_rounds = db.session.query(
+            Player.player_id,
+            Player.name,
+            db.func.max(Round.round_number).label('highest_round')
+        ).outerjoin(
+            Match, db.or_(Match.player1_id == Player.player_id, Match.player2_id == Player.player_id)
+        ).outerjoin(
+            Round, Round.round_id == Match.round_id
+        ).filter(
+            Round.tournament_id == tournament_id
+        ).group_by(Player.player_id).subquery()
+
+        # Step 2: Fetch the number of matches won by each player
+        matches_won = db.session.query(
+            Player.player_id,
+            db.func.count(Match.match_id).label('matches_won')
+        ).outerjoin(
+            Match, Match.winner_id == Player.player_id
+        ).outerjoin(
+            Round, Round.round_id == Match.round_id
+        ).filter(
+            Round.tournament_id == tournament_id
+        ).group_by(Player.player_id).subquery()
+
+        # Step 3: Fetch all players in the tournament
+        all_players = db.session.query(
+            Player.player_id,
+            Player.name
+        ).join(
+            GroupPlayer, Player.player_id == GroupPlayer.player_id
+        ).join(
+            Group, Group.group_id == GroupPlayer.group_id
+        ).filter(
+            Group.tournament_id == tournament_id
+        ).subquery()
+
+        # Step 4: Combine the three queries
+        rankings = db.session.query(
+            all_players.c.player_id,
+            all_players.c.name,
+            db.func.coalesce(highest_rounds.c.highest_round, 0).label('highest_round'),
+            db.func.coalesce(matches_won.c.matches_won, 0).label('matches_won')
+        ).outerjoin(
+            highest_rounds, all_players.c.player_id == highest_rounds.c.player_id
+        ).outerjoin(
+            matches_won, all_players.c.player_id == matches_won.c.player_id
+        ).order_by(
+            db.func.coalesce(highest_rounds.c.highest_round, 0).desc(),
+            db.func.coalesce(matches_won.c.matches_won, 0).desc()
+        ).all()
+
+        # Step 5: Format the result
+        players_data = [{
+            "player_id": player.player_id,
+            "name": player.name,
+            "highest_round": player.highest_round,
+            "matches_won": player.matches_won
+        } for player in rankings]
+
+        return jsonify(players_data), 200
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+
+
 
 
 # Endpoint to update the result of a specific match
@@ -97,22 +186,32 @@ def get_round_matches(tournament_id, round_number):
 @app.route('/api/next-round/<int:tournament_id>', methods=['POST'])
 def next_round(tournament_id):
     try:
+        tournament = Tournament.query.get(tournament_id)
+        if not tournament:
+            return jsonify({"error": "Tournament not found"}), 404
+
+        # Determine the current round number
         current_round = Round.query.filter_by(tournament_id=tournament_id).order_by(Round.round_number.desc()).first()
-        current_round_number = current_round.round_number
+        if not current_round:
+            return jsonify({"error": "No rounds found for the tournament"}), 404
 
-        groups = Group.query.filter_by(tournament_id=tournament_id).all()
-        advancing_players = tournament.determine_advancements(groups, tournament_id, current_round_number)
-        next_round_number = current_round_number + 1
+        # Get the list of players in the current round
+        matches_in_current_round = Match.query.filter_by(round_id=current_round.round_id).all()
+        players_in_current_round = [match.player1 for match in matches_in_current_round] + [match.player2 for match in matches_in_current_round]
 
-        next_round_matches = tournament.create_next_round_matches(advancing_players, next_round_number, tournament_id)
-
-        return jsonify({
-            "message": "Next round matches created",
-            "matches": [match.match_id for match in next_round_matches]
-        }), 201
+        # Check whether to call create_knockout_stage or create_next_round_matches
+        if tournament.group_stage_format_id != '1' and current_round.round_number == 1:
+            print(f"Knock Out Called, {tournament.advancing_players}")
+            create_knockout_stage(tournament.tournament_id, players_in_current_round, current_round.round_number, tournament.advancing_players)            
+        else:
+            create_next_round_matches(current_round.round_id, tournament.tournament_id)
+            print(f"Next Round called")
+        return jsonify({"message": f"Next round created"}), 200
     except Exception as e:
         print(f"Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+
 
 
 @app.route('/api/players', methods=['GET', 'POST'])
@@ -159,56 +258,6 @@ def player_detail(player_id):
             return jsonify({"message": "Player deleted"}), 204
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
-# CRUD operations for Tournament Formats
-@app.route('/api/tournament-formats', methods=['GET', 'POST'])
-def manage_tournament_formats():
-    if request.method == 'GET':
-        try:
-            formats = TournamentFormat.query.all()
-            return jsonify([{'format_id': fmt.format_id, 'format_name': fmt.format_name, 'description': fmt.description} for fmt in formats])
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    elif request.method == 'POST':
-        try:
-            new_format_data = request.json
-            new_format = TournamentFormat(format_name=new_format_data['format_name'], description=new_format_data['description'])
-            db.session.add(new_format)
-            db.session.commit()
-            return jsonify({'format_id': new_format.format_id, 'format_name': new_format.format_name}), 201
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-@app.route('/api/tournament-formats/<int:format_id>', methods=['GET', 'PUT', 'DELETE'])
-def tournament_format_detail(format_id):
-    tournament_format = TournamentFormat.query.get(format_id)
-    if not tournament_format:
-        return jsonify({"error": "Tournament format not found"}), 404
-
-    if request.method == 'GET':
-        return jsonify({'format_id': tournament_format.format_id, 'format_name': tournament_format.format_name, 'description': tournament_format.description})
-
-    elif request.method == 'PUT':
-        try:
-            updated_data = request.json
-            tournament_format.format_name = updated_data.get('format_name', tournament_format.format_name)
-            tournament_format.description = updated_data.get('description', tournament_format.description)
-            db.session.commit()
-            return jsonify({'format_id': tournament_format.format_id, 'format_name': tournament_format.format_name})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    elif request.method == 'DELETE':
-        try:
-            db.session.delete(tournament_format)
-            db.session.commit()
-            return jsonify({"message": "Tournament format deleted"}), 204
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-
-
 @app.route('/api/tournaments/<int:tournament_id>', methods=['GET', 'PUT', 'DELETE'])
 def tournament_detail(tournament_id):
     tournament = Tournament.query.get(tournament_id)
@@ -216,15 +265,30 @@ def tournament_detail(tournament_id):
         return jsonify({"error": "Tournament not found"}), 404
 
     if request.method == 'GET':
-        return jsonify({'tournament_id': tournament.tournament_id, 'name': tournament.name, 'format_id': tournament.format_id})
+        return jsonify({
+            'tournament_id': tournament.tournament_id, 
+            'name': tournament.name, 
+            'group_stage_format_id': tournament.group_stage_format_id, 
+            'knock_out_stage_format_id': tournament.knock_out_stage_format_id,
+            'date': tournament.date.isoformat(),
+            'advancing_players': tournament.advancing_players
+        })
 
     elif request.method == 'PUT':
         try:
             updated_data = request.json
             tournament.name = updated_data.get('name', tournament.name)
-            tournament.format_id = updated_data.get('format_id', tournament.format_id)
+            tournament.group_stage_format_id = updated_data.get('group_stage_format_id', tournament.group_stage_format_id)
+            tournament.knock_out_stage_format_id = updated_data.get('knock_out_stage_format_id', tournament.knock_out_stage_format_id)
             db.session.commit()
-            return jsonify({'tournament_id': tournament.tournament_id, 'name': tournament.name})
+            return jsonify({
+                'tournament_id': tournament.tournament_id, 
+                'name': tournament.name, 
+                'group_stage_format_id': tournament.group_stage_format_id, 
+                'knock_out_stage_format_id': tournament.knock_out_stage_format_id,
+                'date': tournament.date.isoformat()
+                
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -235,6 +299,42 @@ def tournament_detail(tournament_id):
             return jsonify({"message": "Tournament deleted"}), 204
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+@app.route('/api/tournaments/<int:tournament_id>/rounds/<int:round_number>', methods=['GET'])
+def get_round_by_number(tournament_id, round_number):
+    try:
+        # Fetch the round instance using the tournament_id and round_number
+        round_instance = Round.query.filter_by(tournament_id=tournament_id, round_number=round_number).first()
+        
+        if not round_instance:
+            return jsonify({"error": "Round not found"}), 404
+        
+        # Fetch matches for the specified round
+        matches = Match.query.filter_by(round_id=round_instance.round_id).all()
+        
+        if not matches:
+            return jsonify({"error": "No matches found for this round"}), 404
+        
+        matches_data = []
+        for match in matches:
+            match_data = {
+                "match_id": match.match_id,
+                "group_number": match.group.group_number if match.group else None,
+                "player1": {"player_id": match.player1.player_id, "name": match.player1.name},
+                "player2": {"player_id": match.player2.player_id, "name": match.player2.name},
+                "winner_id": match.winner_id
+            }
+            matches_data.append(match_data)
+        
+        return jsonify({
+            "round_id": round_instance.round_id,
+            "round_number": round_instance.round_number,
+            "matches": matches_data
+        }), 200
+    
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
 
 if __name__ == '__main__':

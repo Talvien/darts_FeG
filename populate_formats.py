@@ -1,27 +1,32 @@
-from models import db, TournamentFormat
+from models import db, GroupStageFormat, KnockOutStageFormat
+from app import app
 
 # Initialize the database
 def populate_formats():
-    dart_formats = [
-        {"format_name": "Single Elimination", "description": "Players are eliminated after a single loss."},
-        {"format_name": "Double Elimination", "description": "Players are eliminated after two losses."},
-        {"format_name": "Round Robin", "description": "Each player plays against every other player."}, 
-        {"format_name": "Swiss System", "description": "Players are paired based on their scores."}
+    group_stage_formats = [
+        {"format_id": 1, "format_name": "Single Round Robin"},
+        {"format_id": 2, "format_name": "Double Round Robin"},
+        {"format_id": 3, "format_name": "Keine Group Stage"},
+    ]
+    knock_out_stage_formats = [
+        {"format_id": 1, "format_name": "Single Elimination"},
+        {"format_id": 2, "format_name": "Double Elimination"},
+        {"format_id": 4, "format_name": "Keine Knock-Out Stage"},
     ]
 
-    # Add formats to the session
-    for format_data in dart_formats:
-        format_entry = TournamentFormat(
-            format_name=format_data['format_name'],
-            description=format_data['description']
-        )
-        db.session.add(format_entry)
+    with app.app_context():
+        for format in group_stage_formats:
+            if not db.session.query(GroupStageFormat).filter_by(format_id=format["format_id"]).first():
+                db.session.add(GroupStageFormat(**format))
+        
+        for format in knock_out_stage_formats:
+            if not db.session.query(KnockOutStageFormat).filter_by(format_id=format["format_id"]).first():
+                db.session.add(KnockOutStageFormat(**format))
+        
+        db.session.commit()
 
-    # Commit the session to save the formats
-    db.session.commit()
-    print("Tournament formats added to the database.")
+# Call the function to populate the formats
 
-if __name__ == "__main__":
-    from app import app  # Import your Flask app
-    with app.app_context():  # Create an application context
-        populate_formats()
+# Call the function to populate the formats
+populate_formats()
+

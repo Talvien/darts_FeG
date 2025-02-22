@@ -18,8 +18,13 @@ import { useNavigate } from 'react-router-dom'; // Import useNavigate for naviga
 const Tournament = () => {
   const [players, setPlayers] = useState([]);
   const [selectedPlayers, setSelectedPlayers] = useState([]);
-  const [tournamentFormats, setTournamentFormats] = useState([]);
+  const [groupStageFormats, setGroupStageFormats] = useState([]);
+  const [knockOutStageFormats, setKnockOutStageFormats] = useState([]);
+  const [defaultGroupStageFormat, setDefaultGroupStageFormat] = useState('');
+  const [defaultKnockOutStageFormat, setDefaultKnockOutStageFormat] = useState('');
   const navigate = useNavigate(); // Initialize useNavigate for navigation
+  const [error, setError] = useState('');
+  const [numberOfGroupsOptions, setNumberOfGroupsOptions] = useState(['Auto', ...Array.from({ length: 3 }, (_, i) => (i + 1) * 2)]);
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -35,24 +40,44 @@ const Tournament = () => {
       }
     };
 
-    const fetchTournamentFormats = async () => {
+    const fetchGroupStageFormats = async () => {
       try {
-        const response = await fetch('/api/tournament-formats');
+        const response = await fetch('/api/group-stage-formats');
         if (!response.ok) {
           throw new Error('Network response was not ok');
         }
         const formatsData = await response.json();
-        setTournamentFormats(formatsData);
+        setGroupStageFormats(formatsData);
+        if (formatsData.length > 0) {
+          formik.setFieldValue('groupStageFormat', formatsData[1].format_id); // Set initial value
+        }
       } catch (error) {
-        console.error('Error fetching tournament formats:', error);
+        console.error('Error fetching group stage formats:', error);
       }
     };
 
-    fetchTournamentFormats();
+    const fetchKnockOutStageFormats = async () => {
+      try {
+        const response = await fetch('/api/knock-out-stage-formats');
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        const formatsData = await response.json();
+        setKnockOutStageFormats(formatsData);
+        if (formatsData.length > 0) {
+          formik.setFieldValue('knockOutStageFormat', formatsData[1].format_id); // Set initial value
+        }
+      } catch (error) {
+        console.error('Error fetching knock-out stage formats:', error);
+      }
+    };
+
+    fetchGroupStageFormats();
+    fetchKnockOutStageFormats();
     fetchPlayers();
   }, []);
 
-  const handlePlayerToggle = (playerId) => {
+    const handlePlayerToggle = (playerId) => {
     const currentIndex = selectedPlayers.indexOf(playerId);
     const newSelectedPlayers = [...selectedPlayers];
 
@@ -68,26 +93,38 @@ const Tournament = () => {
   const formik = useFormik({
     initialValues: {
       tournamentName: '',
-      newPlayerName: '',
-      selectedFormat: '',
+      groupStageFormat: '',
+      knockOutStageFormat: '',
       numberOfGroups: 'Auto',
+      advancingPlayers: 2,
     },
     validationSchema: Yup.object({
-      tournamentName: Yup.string().required('Tournament Name is required'),
-      selectedFormat: Yup.string().required('Tournament Format is required'),
-      numberOfGroups: Yup.string().required('Number of Groups is required'),
+      tournamentName: Yup.string().required('Turniername erforderlich')
     }),
     onSubmit: async (values, { resetForm }) => {
+      
+      let numGroups = values.numberOfGroups;
+      
+      if (numGroups !== 'Auto') {
+        numGroups = parseInt(numGroups, 10); // Convert to integer
+      }
       if (!values.tournamentName || selectedPlayers.length < 2) {
-        alert('Bitte Turniernamen eingeben und mindestens zwei Spieler auswählen.');
+        setError('Bitte Turniernamen eingeben und mindestens zwei Spieler auswählen.');
+        return;
+      }
+
+      if (values.groupStageFormat !== '1' && values.numberOfGroups !== 'Auto' && selectedPlayers.length < values.numberOfGroups * 2) {
+        setError('Die Anzahl der Gruppen darf nicht mehr als die Hälfte der ausgewählten Spieler betragen.');
         return;
       }
 
       const newTournament = {
         name: values.tournamentName,
-        format_id: values.selectedFormat,
+        group_stage_format_id: values.groupStageFormat,
+        knock_out_stage_format_id: values.knockOutStageFormat,
         players: selectedPlayers,
-        groups: values.numberOfGroups,
+        num_groups: values.groupStageFormat === '1' ? null : numGroups,
+        advancing_players: values.knockOutStageFormat === '1' ? null : values.advancingPlayers,
       };
 
       try {
@@ -100,7 +137,8 @@ const Tournament = () => {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to create tournament');
+          setError(result.error); // Set the error message
+          return;
         }
 
         const createdTournament = await response.json();
@@ -108,42 +146,22 @@ const Tournament = () => {
 
         resetForm();
         setSelectedPlayers([]);
+        setError('');
         navigate(`/tournaments/${createdTournament.tournament_id}`); // Navigate to the matches screen
       } catch (error) {
         console.error('Error creating tournament:', error);
+        setError('An error occurred while creating the tournament.');
       }
     },
   });
 
-  async function handleCreatePlayer() {
-    if (formik.values.newPlayerName.trim() === '') return;
-
-    const newPlayer = { name: formik.values.newPlayerName };
-    try {
-      const response = await fetch('/api/players', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newPlayer),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to add player');
-      }
-
-      const addedPlayer = await response.json();
-      console.log('Player created:', addedPlayer); // Add log here
-      setPlayers((prevPlayers) => [...prevPlayers, addedPlayer]);
-      formik.setFieldValue('newPlayerName', '');
-    } catch (error) {
-      console.error('Error creating player:', error);
-    }
-  }
+ 
+  formik.initialValues.groupStageFormat = defaultGroupStageFormat;
+  formik.initialValues.knockOutStageFormat = defaultKnockOutStageFormat;
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
+      <Typography variant="h5" gutterBottom>
         Neues Turnier erstellen
       </Typography>
 
@@ -164,26 +182,47 @@ const Tournament = () => {
         {/* Tournament Format Selection and Number of Groups */}
         <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
           <FormControl fullWidth variant="outlined">
-            <InputLabel id="tournament-format-label">Turnierformat</InputLabel>
+            <InputLabel id="group-stage-format-label">Gruppenformat</InputLabel>
             <Select
-              labelId="tournament-format-label"
-              name="selectedFormat"
-              value={formik.values.selectedFormat}
+              labelId="group-stage-format-label"
+              name="groupStageFormat"
+              value={formik.values.groupStageFormat}
               onChange={formik.handleChange}
-              label="Turnierformat"
-              error={formik.touched.selectedFormat && Boolean(formik.errors.selectedFormat)}
+              label="Group-Stage Format"
+              error={formik.touched.groupStageFormat && Boolean(formik.errors.groupStageFormat)}
             >
-              {tournamentFormats.map((format) => (
+              {groupStageFormats.map((format) => (
                 <MenuItem key={format.format_id} value={format.format_id}>
                   {format.format_name}
                 </MenuItem>
               ))}
             </Select>
-            {formik.touched.selectedFormat && formik.errors.selectedFormat && (
-              <Typography variant="caption" color="error">{formik.errors.selectedFormat}</Typography>
+            {formik.touched.groupStageFormat && formik.errors.groupStageFormat && (
+              <Typography variant="caption" color="error">{formik.errors.groupStageFormat}</Typography>
             )}
           </FormControl>
 
+          <FormControl fullWidth variant="outlined">
+            <InputLabel id="knock-out-stage-format-label">Knock-Out Format</InputLabel>
+            <Select
+              labelId="knock-out-stage-format-label"
+              name="knockOutStageFormat"
+              value={formik.values.knockOutStageFormat}
+              onChange={formik.handleChange}
+              label="Knock-Out Stage Format"
+              error={formik.touched.knockOutStageFormat && Boolean(formik.errors.knockOutStageFormat)}
+            >
+              {knockOutStageFormats.map((format) => (
+                <MenuItem key={format.format_id} value={format.format_id}>
+                  {format.format_name}
+                </MenuItem>
+              ))}
+            </Select>
+            {formik.touched.knockOutStageFormat && formik.errors.knockOutStageFormat && (
+              <Typography variant="caption" color="error">{formik.errors.knockOutStageFormat}</Typography>
+            )}
+          </FormControl>
+        
           <FormControl fullWidth variant="outlined">
             <InputLabel id="number-of-groups-label">Gruppenanzahl</InputLabel>
             <Select
@@ -193,16 +232,39 @@ const Tournament = () => {
               onChange={formik.handleChange}
               label="Gruppenanzahl"
               error={formik.touched.numberOfGroups && Boolean(formik.errors.numberOfGroups)}
+              disabled={formik.values.groupStageFormat === '1'}
             >
-              <MenuItem value="Auto">Auto</MenuItem>
-              <MenuItem value="1">1</MenuItem>
-              <MenuItem value="2">2</MenuItem>
-              <MenuItem value="3">3</MenuItem>
+              {numberOfGroupsOptions.map((option) => (
+                <MenuItem key={`number-of-groups-${option}`} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
             </Select>
             {formik.touched.numberOfGroups && formik.errors.numberOfGroups && (
               <Typography variant="caption" color="error">{formik.errors.numberOfGroups}</Typography>
             )}
           </FormControl>
+
+
+          <FormControl fullWidth variant="outlined">
+            <InputLabel id="advancing-players-label">Advancing Players</InputLabel>
+            <Select
+              labelId="advancing-players-label"
+              name="advancingPlayers"
+              value={formik.values.advancingPlayers}
+              onChange={formik.handleChange}
+              label="Advancing Players"
+              error={formik.touched.advancingPlayers && Boolean(formik.errors.advancingPlayers)}
+              disabled={formik.values.knockOutStageFormat === '1'} // Assuming '1' is the value for "Keine Knock-Out Stage"
+            >
+              <MenuItem value={1}>1</MenuItem>
+              <MenuItem value={2}>2</MenuItem>
+            </Select>
+            {formik.touched.advancingPlayers && formik.errors.advancingPlayers && (
+              <Typography variant="caption" color="error">{formik.errors.advancingPlayers}</Typography>
+            )}
+          </FormControl>
+
         </Box>
 
         {/* Player Selection List */}
@@ -252,53 +314,16 @@ const Tournament = () => {
           </Box>
         </Box>
 
-        <Typography variant="h6">Neuen Spieler erstellen</Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-          }}
-        >
-          <FormControl fullWidth variant="outlined" sx={{ mb: 2 }}>
-            <TextField
-              label="Spielername"
-              variant="outlined"
-              name="newPlayerName"
-              value={formik.values.newPlayerName}
-              onChange={formik.handleChange}
-              error={formik.touched.newPlayerName && Boolean(formik.errors.newPlayerName)}
-              helperText={formik.touched.newPlayerName && formik.errors.newPlayerName}
-              slotProps={{
-                input: {
-                  sx: {
-                    height: 50,
-                  },
-                },
-              }}
-            />
-          </FormControl>
-
-          {/* New Player Creation Button */}
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleCreatePlayer}
-            sx={{
-              mb: 2,
-              height: 50,
-              minWidth: 200,
-            }}
-          >
-            Add Player
-          </Button>
-        </Box>
-
-        {/* Tournament Creation Button */}
-        <Box sx={{ mt: 2 }}>
+      
+        <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <Button variant="contained" color="secondary" type="submit">
-            Create Tournament
+            Turnier starten
           </Button>
+          {error && (
+            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+              {error}
+            </Typography>
+          )}
         </Box>
       </form>
     </Box>

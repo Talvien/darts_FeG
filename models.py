@@ -18,22 +18,29 @@ class Player(db.Model):
     player_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
 
-class TournamentFormat(db.Model):
-    __tablename__ = 'tournament_formats'
-
+class GroupStageFormat(db.Model):
+    __tablename__ = 'group_stage_formats'
     format_id = db.Column(db.Integer, primary_key=True)
-    format_name = db.Column(db.String(80), unique=True, nullable=False)
-    description = db.Column(db.String(255))
+    format_name = db.Column(db.String(50), nullable=False)
+
+class KnockOutStageFormat(db.Model):
+    __tablename__ = 'knock_out_stage_formats'
+    format_id = db.Column(db.Integer, primary_key=True)
+    format_name = db.Column(db.String(50), nullable=False)
+
 
 class Tournament(db.Model):
     __tablename__ = 'tournaments'
 
     tournament_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
-    format_id = db.Column(db.Integer, db.ForeignKey('tournament_formats.format_id'))
     date = db.Column(db.Date)
+    group_stage_format_id = db.Column(db.Integer, db.ForeignKey('group_stage_formats.format_id'), nullable=True)
+    knock_out_stage_format_id = db.Column(db.Integer, db.ForeignKey('knock_out_stage_formats.format_id'), nullable=True)
+    advancing_players = db.Column(db.Integer, nullable=True)
 
-    format = db.relationship('TournamentFormat', backref='tournaments')
+    group_stage_format = db.relationship('GroupStageFormat', backref=db.backref('tournaments', lazy=True))
+    knock_out_stage_format = db.relationship('KnockOutStageFormat', backref=db.backref('tournaments', lazy=True))
     rounds = db.relationship('Round', backref='tournament', cascade='all, delete-orphan')
     groups = db.relationship('Group', backref='tournament', cascade='all, delete-orphan')
 
