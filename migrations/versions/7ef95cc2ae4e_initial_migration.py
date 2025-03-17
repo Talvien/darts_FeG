@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 5ff1a147c0ce
+Revision ID: 7ef95cc2ae4e
 Revises: 
-Create Date: 2025-02-21 12:09:50.227644
+Create Date: 2025-02-24 14:49:05.729925
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '5ff1a147c0ce'
+revision = '7ef95cc2ae4e'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -74,14 +74,16 @@ def upgrade():
     sa.Column('tournament_id', sa.Integer(), nullable=True),
     sa.Column('round_id', sa.Integer(), nullable=True),
     sa.Column('group_id', sa.Integer(), nullable=True),
-    sa.Column('player1_id', sa.Integer(), nullable=True),
-    sa.Column('player2_id', sa.Integer(), nullable=True),
+    sa.Column('player1_id', sa.Integer(), nullable=False),
+    sa.Column('player2_id', sa.Integer(), nullable=False),
+    sa.Column('player3_id', sa.Integer(), nullable=True),
     sa.Column('score_player1', sa.Integer(), nullable=True),
     sa.Column('score_player2', sa.Integer(), nullable=True),
     sa.Column('winner_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['group_id'], ['groups.group_id'], name=op.f('fk_matches_group_id_groups')),
     sa.ForeignKeyConstraint(['player1_id'], ['players.player_id'], name=op.f('fk_matches_player1_id_players')),
     sa.ForeignKeyConstraint(['player2_id'], ['players.player_id'], name=op.f('fk_matches_player2_id_players')),
+    sa.ForeignKeyConstraint(['player3_id'], ['players.player_id'], name=op.f('fk_matches_player3_id_players')),
     sa.ForeignKeyConstraint(['round_id'], ['rounds.round_id'], name=op.f('fk_matches_round_id_rounds')),
     sa.ForeignKeyConstraint(['tournament_id'], ['tournaments.tournament_id'], name=op.f('fk_matches_tournament_id_tournaments')),
     sa.ForeignKeyConstraint(['winner_id'], ['players.player_id'], name=op.f('fk_matches_winner_id_players')),

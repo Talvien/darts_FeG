@@ -4,14 +4,14 @@ from app import app
 # Initialize the database
 def populate_formats():
     group_stage_formats = [
-        {"format_id": 1, "format_name": "Single Round Robin"},
-        {"format_id": 2, "format_name": "Double Round Robin"},
-        {"format_id": 3, "format_name": "Keine Group Stage"},
+        {"format_id": 1, "format_name": "Keine Group Stage"},
+        {"format_id": 2, "format_name": "Single Round Robin"},
+        {"format_id": 3, "format_name": "Double Round Robine"},
     ]
     knock_out_stage_formats = [
-        {"format_id": 1, "format_name": "Single Elimination"},
-        {"format_id": 2, "format_name": "Double Elimination"},
-        {"format_id": 4, "format_name": "Keine Knock-Out Stage"},
+        {"format_id": 1, "format_name": "Keine Knock-Out Stage"},
+        {"format_id": 2, "format_name": "Single Elimination"},
+        {"format_id": 3, "format_name": "Double Elimination"},
     ]
 
     with app.app_context():

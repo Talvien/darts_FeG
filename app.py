@@ -3,12 +3,12 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from models import db, Player, Tournament, Match, Round, Group, GroupStageFormat, KnockOutStageFormat, GroupPlayer
-from tournament import create_knockout_stage, create_next_round_matches
+from tournament import create_knockout_stage, create_next_round_matches, create_tiebreaker_matches
 import tournament
 
 app = Flask(__name__)
 app.secret_key = b'***************************************'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database_darts.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:Ilm1aGig#my@127.0.0.1:3306/database_darts'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.json.compact = False
 
@@ -63,6 +63,7 @@ def get_matches(tournament_id):
         "group_number": match.group.group_number if match.group else None,
         "player1": {"player_id": match.player1.player_id, "name": match.player1.name},
         "player2": {"player_id": match.player2.player_id, "name": match.player2.name},
+        "player3": {"player_id": match.player3.player_id, "name": match.player3.name} if match.player3 else None,
         "winner_id": match.winner_id
     } for match in matches]
 
@@ -148,12 +149,15 @@ def get_player_rankings(tournament_id):
 def update_match(match_id):
     data = request.json
     winner_id = data.get('winner_id')
+    second_place_id = data.get('second_place_id')
 
     match = Match.query.get(match_id)
     if not match:
         return jsonify({"error": "Match not found"}), 404
 
     match.winner_id = winner_id
+    if second_place_id:
+        match.second_place_id = second_place_id
     db.session.commit()
 
     return jsonify({"message": "Match result updated"}), 200
@@ -171,6 +175,7 @@ def get_round_matches(tournament_id, round_number):
             "group_number": match.group.group_number if match.group else None,
             "player1": {"player_id": match.player1.player_id, "name": match.player1.name},
             "player2": {"player_id": match.player2.player_id, "name": match.player2.name},
+            "player3": {"player_id": match.player3.player_id, "name": match.player3.name} if match.player3 else None,
             "winner_id": match.winner_id,
             "winner_name": match.winner.name if match.winner else None
         } for match in matches]
@@ -322,7 +327,9 @@ def get_round_by_number(tournament_id, round_number):
                 "group_number": match.group.group_number if match.group else None,
                 "player1": {"player_id": match.player1.player_id, "name": match.player1.name},
                 "player2": {"player_id": match.player2.player_id, "name": match.player2.name},
-                "winner_id": match.winner_id
+                "player3": {"player_id": match.player3.player_id, "name": match.player3.name} if match.player3 else None,
+                "winner_id": match.winner_id,
+                "second_place": match.second_place
             }
             matches_data.append(match_data)
         
@@ -335,6 +342,75 @@ def get_round_by_number(tournament_id, round_number):
     except Exception as e:
         print(f"Error: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+
+@app.route('/api/tournaments/<int:tournament_id>/tiebreakers', methods=['POST'])
+def create_tiebreakers(tournament_id):
+    try:
+        current_round = Round.query.filter_by(tournament_id=tournament_id).order_by(Round.round_number.desc()).first()
+        if not current_round:
+            return jsonify({"error": "No current round found"}), 404
+
+        # Determine the number of advancing players
+        num_advancing_players = Tournament.query.filter_by(tournament_id=tournament_id).first().advancing_players  # You can adjust this value as needed
+
+        tiebreaker_matches = create_tiebreaker_matches(tournament_id, current_round.round_id, num_advancing_players)
+        
+        tiebreaker_data = [{
+            "match_id": match.match_id,
+            "group_number": match.group.group_number if match.group else None,
+            "player1": {"player_id": match.player1.player_id, "name": match.player1.name},
+            "player2": {"player_id": match.player2.player_id, "name": match.player2.name},
+            "player3": {"player_id": match.player3.player_id, "name": match.player3.name} if match.player3 else None,
+        } for match in tiebreaker_matches]
+
+        return jsonify({"tiebreakers": tiebreaker_data}), 201
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/tournaments/<int:tournament_id>/tiebreakers/check', methods=['GET'])
+def check_tiebreakers(tournament_id):
+    try:
+        current_round = Round.query.filter_by(tournament_id=tournament_id).order_by(Round.round_number.desc()).first()
+        if not current_round:
+            return jsonify({"error": "No current round found"}), 404
+
+        matches_in_round = Match.query.filter_by(round_id=current_round.round_id).all()
+        tiebreakers = []
+
+        groups = Group.query.filter_by(tournament_id=tournament_id).all()
+        for group in groups:
+            group_winners = []
+            for gp in group.players:
+                player = gp.player
+                matches_won = sum(1 for match in matches_in_round if match.winner_id == player.player_id)
+                matches_won += sum(0.5 for match in matches_in_round if match.second_place_id == player.player_id)
+                group_winners.append({
+                    "player": player,
+                    "matches_won": matches_won,
+                    "group_id": group.group_id
+                })
+            sorted_winners = sorted(group_winners, key=lambda p: p['matches_won'], reverse=True)
+
+            # Check for enough players before accessing list indices
+            if len(sorted_winners) < 2:
+                continue
+
+            # Handle ties among the top players
+            if len(sorted_winners) > 2:
+                tied_players = [p for p in sorted_winners if p['matches_won'] == sorted_winners[1]['matches_won']]
+                if len(tied_players) > 1:
+                    tiebreakers.extend([{
+                        "player1": {"player_id": tied_players[i]['player'].player_id, "name": tied_players[i]['player'].name},
+                        "player2": {"player_id": tied_players[i + 1]['player'].player_id, "name": tied_players[i + 1]['player'].name}
+                    } for i in range(0, len(tied_players), 2) if i + 1 < len(tied_players)])
+
+        return jsonify({"tiebreakers": tiebreakers}), 200
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':

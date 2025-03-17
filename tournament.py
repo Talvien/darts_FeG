@@ -128,9 +128,9 @@ def create_knockout_stage(tournament_id, players, round_number, num_advancing_pl
 
 def create_groups_auto(tournament_id, players, round_id, format_id):
     num_players = len(players)
-    if num_players <= 4:
+    if num_players <= 5:
         num_groups = 1
-    elif num_players <= 8:
+    elif num_players <= 13:
         num_groups = 2
     else:
         num_groups = 4
@@ -252,4 +252,59 @@ def create_next_round_matches(current_round_id, tournament_id):
     db.session.commit()
     print(f"Created matches for round {next_round_number}: {next_round_matches}")
     return next_round_matches
+
+
+def create_tiebreaker_matches(tournament_id, current_round_id, num_advancing_players):
+    current_round = Round.query.filter_by(tournament_id=tournament_id, round_id=current_round_id).first()
+    matches_in_round = Match.query.filter_by(round_id=current_round.round_id).all()
+
+    groups = Group.query.filter_by(tournament_id=tournament_id).all()
+    tiebreaker_matches = []
+
+    for group in groups:
+        group_winners = []
+        for gp in group.players:
+            player = gp.player
+            matches_won = sum(1 for match in matches_in_round if match.winner_id == player.player_id)
+            matches_won += sum(0.5 for match in matches_in_round if match.second_place_id == player.player_id)
+            group_winners.append({
+                "player": player,
+                "matches_won": matches_won
+            })
+        sorted_winners = sorted(group_winners, key=lambda p: p['matches_won'], reverse=True)
+
+        if len(sorted_winners) < num_advancing_players:
+            continue
+        # Special case: if only one group and advancing players is 2, no tiebreaker needed for ties between 1st and 2nd place
+        if len(groups) == 1 and num_advancing_players == 2 and sorted_winners[0]['matches_won'] == sorted_winners[1]['matches_won'] and len([p for p in sorted_winners if p['matches_won'] == sorted_winners[0]['matches_won']]) == 2:
+            continue
+
+
+        # Identify players with the same number of wins who need a tiebreaker
+        ties = [p for p in sorted_winners if p['matches_won'] == sorted_winners[num_advancing_players - 1]['matches_won']]
+        if len(ties) > 0:
+            # Handle 3-player match for uneven number of ties first
+            if len(ties) % 2 == 1:
+                match = Match(
+                    tournament_id=tournament_id,
+                    round_id=current_round.round_id,
+                    player1_id=ties[-3]['player'].player_id,
+                    player2_id=ties[-1]['player'].player_id,
+                    player3_id=ties[-2]['player'].player_id
+                )
+                tiebreaker_matches.append(match)
+                db.session.add(match)
+                ties = ties[:-3]  # Remove the last 3 players from the ties list
+
+            # Handle 2-player matches
+            for i in range(0, len(ties), 2):
+                match = Match(tournament_id=tournament_id, round_id=current_round.round_id, player1_id=ties[i]['player'].player_id, player2_id=ties[i + 1]['player'].player_id)
+                tiebreaker_matches.append(match)
+                db.session.add(match)
+
+    db.session.commit()
+    print(f"Tiebreaker matches created: {tiebreaker_matches}")
+    return tiebreaker_matches
+
+
 

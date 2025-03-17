@@ -53,7 +53,7 @@ class Group(db.Model):
     group_name = db.Column(db.String(80), nullable=False)
 
     players = db.relationship('GroupPlayer', backref='group', cascade='all, delete-orphan')
-    matches = db.relationship('Match', backref='group', cascade='all, delete-orphan')  # Add this line
+    matches = db.relationship('Match', backref='group', cascade='all, delete-orphan') 
 
 class GroupPlayer(db.Model):
     __tablename__ = 'group_players'
@@ -80,14 +80,18 @@ class Match(db.Model):
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.tournament_id'))
     round_id = db.Column(db.Integer, db.ForeignKey('rounds.round_id'))
     group_id = db.Column(db.Integer, db.ForeignKey('groups.group_id'), nullable=True)  # Optional relationship with Group
-    player1_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
-    player2_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
+    player1_id = db.Column(db.Integer, db.ForeignKey('players.player_id'), nullable=False)
+    player2_id = db.Column(db.Integer, db.ForeignKey('players.player_id'), nullable=False)
+    player3_id = db.Column(db.Integer, db.ForeignKey('players.player_id'), nullable=True)
     score_player1 = db.Column(db.Integer)
     score_player2 = db.Column(db.Integer)
     winner_id = db.Column(db.Integer, db.ForeignKey('players.player_id'))
+    second_place_id = db.Column(db.Integer, db.ForeignKey('players.player_id'), nullable=True)
 
     tournament = db.relationship('Tournament', backref='matches')
     player1 = db.relationship('Player', foreign_keys=[player1_id], backref='matches_as_player1')
     player2 = db.relationship('Player', foreign_keys=[player2_id], backref='matches_as_player2')
+    player3 = db.relationship('Player', foreign_keys=[player3_id], backref='matches_as_player3')
 
     winner = db.relationship('Player', foreign_keys=[winner_id])
+    second_place = db.relationship('Player', foreign_keys=[second_place_id])
