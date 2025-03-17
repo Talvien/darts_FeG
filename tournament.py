@@ -85,6 +85,7 @@ def create_knockout_stage(tournament_id, players, round_number, num_advancing_pl
                 for gp in group.players:
                     player = gp.player
                     matches_won = sum(1 for match in matches_in_round if match.winner_id == player.player_id)
+                    matches_won += sum(0.5 for match in matches_in_round if match.second_place_id == player.player_id)
                     group_winners.append({
                         "player": player,
                         "matches_won": matches_won,

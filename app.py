@@ -391,7 +391,9 @@ def check_tiebreakers(tournament_id):
                     "matches_won": matches_won,
                     "group_id": group.group_id
                 })
+                print(f"Sorted Winners {player}: {matches_won}")
             sorted_winners = sorted(group_winners, key=lambda p: p['matches_won'], reverse=True)
+            
 
             # Check for enough players before accessing list indices
             if len(sorted_winners) < 2:
