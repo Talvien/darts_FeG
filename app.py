@@ -373,6 +373,7 @@ def create_tiebreakers(tournament_id):
 def check_tiebreakers(tournament_id):
     try:
         current_round = Round.query.filter_by(tournament_id=tournament_id).order_by(Round.round_number.desc()).first()
+        num_advancing_players = Tournament.query.filter_by(tournament_id=tournament_id).first().advancing_players
         if not current_round:
             return jsonify({"error": "No current round found"}), 404
 
@@ -393,20 +394,37 @@ def check_tiebreakers(tournament_id):
                 })
                 print(f"Sorted Winners {player}: {matches_won}")
             sorted_winners = sorted(group_winners, key=lambda p: p['matches_won'], reverse=True)
-            
 
             # Check for enough players before accessing list indices
-            if len(sorted_winners) < 2:
+            if len(sorted_winners) <= num_advancing_players:
                 continue
 
-            # Handle ties among the top players
-            if len(sorted_winners) > 2:
-                tied_players = [p for p in sorted_winners if p['matches_won'] == sorted_winners[1]['matches_won']]
-                if len(tied_players) > 1:
-                    tiebreakers.extend([{
-                        "player1": {"player_id": tied_players[i]['player'].player_id, "name": tied_players[i]['player'].name},
-                        "player2": {"player_id": tied_players[i + 1]['player'].player_id, "name": tied_players[i + 1]['player'].name}
-                    } for i in range(0, len(tied_players), 2) if i + 1 < len(tied_players)])
+            # Identify the top win counts for advancing players
+            top_win_counts = sorted(set(p['matches_won'] for p in sorted_winners), reverse=True)[:num_advancing_players]
+            relevant_tied_players = []
+            for win_count in top_win_counts:
+                players_with_win_count = [p for p in sorted_winners if p['matches_won'] == win_count]
+                if len(players_with_win_count) > 1:
+                    relevant_tied_players.extend(players_with_win_count)
+                if len(relevant_tied_players) >= num_advancing_players:
+                    break
+            print(f"Tied Player Relevant {relevant_tied_players}")
+
+            if len(relevant_tied_players) > 1 and len(relevant_tied_players) > num_advancing_players:
+                # Handle 3-player match for uneven number of ties first
+                if len(relevant_tied_players) % 2 == 1:
+                    tiebreakers.append({
+                        "player1": {"player_id": relevant_tied_players[-3]['player'].player_id, "name": relevant_tied_players[-3]['player'].name},
+                        "player2": {"player_id": relevant_tied_players[-2]['player'].player_id, "name": relevant_tied_players[-2]['player'].name},
+                        "player3": {"player_id": relevant_tied_players[-1]['player'].player_id, "name": relevant_tied_players[-1]['player'].name}
+                    })
+                    relevant_tied_players = relevant_tied_players[:-3]  # Remove the last 3 players from the ties list
+
+                # Handle 2-player matches
+                tiebreakers.extend([{
+                    "player1": {"player_id": relevant_tied_players[i]['player'].player_id, "name": relevant_tied_players[i]['player'].name},
+                    "player2": {"player_id": relevant_tied_players[i + 1]['player'].player_id, "name": relevant_tied_players[i + 1]['player'].name}
+                } for i in range(0, len(relevant_tied_players), 2) if i + 1 < len(relevant_tied_players)])
 
         return jsonify({"tiebreakers": tiebreakers}), 200
 

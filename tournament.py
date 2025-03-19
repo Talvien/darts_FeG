@@ -95,34 +95,42 @@ def create_knockout_stage(tournament_id, players, round_number, num_advancing_pl
                 group_players.append(sorted_winners[:num_advancing_players])  # Top players from each group
                 print(f"Group Winners for Group {group.group_id}: {sorted_winners[:num_advancing_players]}")
 
-            # Ensure correct matching between groups
-            first_seeds = [(group[0]['player'], group[0]['group_id']) for group in group_players if len(group) > 0]
-            second_seeds = [(group[1]['player'], group[1]['group_id']) for group in group_players if len(group) > 1]
-
-            print(f"First Seeds: {first_seeds}")
-            print(f"Second Seeds: {second_seeds}")
-
-            # Match second seed with first seed from another group
-            for first_seed in first_seeds:
-                for second_seed in second_seeds:
-                    if first_seed[1] != second_seed[1]:  # Ensure different groups
-                        match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=second_seed[0].player_id, player2_id=first_seed[0].player_id)
-                        print(f"Match: Player 1 : {second_seed[0].player_id}, Player 2: {first_seed[0].player_id}")
+            if len(groups) == 1:
+                # Special case for single group
+                single_group_players = group_players[0]
+                for i in range(0, len(single_group_players), 2):
+                    if i + 1 < len(single_group_players):
+                        match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=single_group_players[i]['player'].player_id, player2_id=single_group_players[i + 1]['player'].player_id)
+                        print(f"Match: Player 1 : {single_group_players[i]['player'].player_id}, Player 2: {single_group_players[i + 1]['player'].player_id}")
                         db.session.add(match)
-                        second_seeds.remove(second_seed)  # Remove matched second seed
-                        break
+            else:
+                # Ensure correct matching between groups
+                first_seeds = [(group[0]['player'], group[0]['group_id']) for group in group_players if len(group) > 0]
+                second_seeds = [(group[1]['player'], group[1]['group_id']) for group in group_players if len(group) > 1]
 
-            db.session.commit()
-            db.session.flush()
+                print(f"First Seeds: {first_seeds}")
+                print(f"Second Seeds: {second_seeds}")
+
+                # Match second seed with first seed from another group
+                for first_seed in first_seeds:
+                    for second_seed in second_seeds:
+                        if first_seed[1] != second_seed[1]:  # Ensure different groups
+                            match = Match(tournament_id=tournament_id, round_id=next_round.round_id, player1_id=second_seed[0].player_id, player2_id=first_seed[0].player_id)
+                            print(f"Match: Player 1 : {second_seed[0].player_id}, Player 2: {first_seed[0].player_id}")
+                            db.session.add(match)
+                            second_seeds.remove(second_seed)  # Remove matched second seed
+                            break
+
+
     else:
         # Randomly match players if there's no group stage
-        random.shuffle(players)
+        random.shuffle(players) 
         for i in range(0, len(players), 2):
             if i + 1 < len(players):
                 match = Match(tournament_id=tournament_id, round_id=current_round.round_id, player1_id=players[i].player_id, player2_id=players[i + 1].player_id)
                 db.session.add(match)
-        db.session.commit()
-        db.session.flush()
+    db.session.commit()
+    db.session.flush()
 
 
 
@@ -272,40 +280,53 @@ def create_tiebreaker_matches(tournament_id, current_round_id, num_advancing_pla
                 "player": player,
                 "matches_won": matches_won
             })
+            print(f"Sorted Winners {player}: {matches_won}")
         sorted_winners = sorted(group_winners, key=lambda p: p['matches_won'], reverse=True)
+        for winner in sorted_winners:
+            print(f"{winner}")
 
-        if len(sorted_winners) < num_advancing_players:
+        if len(sorted_winners) <= num_advancing_players:
+            print(f"Abbruch getriggert, Sorted Winners <= Advancing players")
             continue
+
+        # Identify the top win counts for advancing players
+        top_win_counts = sorted(set(p['matches_won'] for p in sorted_winners), reverse=True)[:num_advancing_players]
+        relevant_tied_players = []
+        for win_count in top_win_counts:
+            players_with_win_count = [p for p in sorted_winners if p['matches_won'] == win_count]
+            if len(players_with_win_count) > 1:
+                relevant_tied_players.extend(players_with_win_count)
+            if len(relevant_tied_players) >= num_advancing_players:
+                break
+
         # Special case: if only one group and advancing players is 2, no tiebreaker needed for ties between 1st and 2nd place
-        if len(groups) == 1 and num_advancing_players == 2 and sorted_winners[0]['matches_won'] == sorted_winners[1]['matches_won'] and len([p for p in sorted_winners if p['matches_won'] == sorted_winners[0]['matches_won']]) == 2:
+        if len(relevant_tied_players) == 2 and num_advancing_players == 2:
             continue
 
-
-        # Identify players with the same number of wins who need a tiebreaker
-        ties = [p for p in sorted_winners if p['matches_won'] == sorted_winners[num_advancing_players - 1]['matches_won']]
-        if len(ties) > 0:
+        if len(relevant_tied_players) > 1 and len(relevant_tied_players) > num_advancing_players:
             # Handle 3-player match for uneven number of ties first
-            if len(ties) % 2 == 1:
+            if len(relevant_tied_players) % 2 == 1:
+                print(f"Three Player handle triggered in {group.group_number}")
+
                 match = Match(
                     tournament_id=tournament_id,
                     round_id=current_round.round_id,
-                    player1_id=ties[-3]['player'].player_id,
-                    player2_id=ties[-1]['player'].player_id,
-                    player3_id=ties[-2]['player'].player_id
+                    player1_id=relevant_tied_players[-3]['player'].player_id,
+                    player2_id=relevant_tied_players[-2]['player'].player_id,
+                    player3_id=relevant_tied_players[-1]['player'].player_id
                 )
                 tiebreaker_matches.append(match)
                 db.session.add(match)
-                ties = ties[:-3]  # Remove the last 3 players from the ties list
+
+                relevant_tied_players = relevant_tied_players[:-3]  # Remove the last 3 players from the ties list
 
             # Handle 2-player matches
-            for i in range(0, len(ties), 2):
-                match = Match(tournament_id=tournament_id, round_id=current_round.round_id, player1_id=ties[i]['player'].player_id, player2_id=ties[i + 1]['player'].player_id)
+            for i in range(0, len(relevant_tied_players), 2):
+                match = Match(tournament_id=tournament_id, round_id=current_round.round_id, player1_id=relevant_tied_players[i]['player'].player_id, player2_id=relevant_tied_players[i + 1]['player'].player_id)
                 tiebreaker_matches.append(match)
                 db.session.add(match)
 
     db.session.commit()
     print(f"Tiebreaker matches created: {tiebreaker_matches}")
     return tiebreaker_matches
-
-
 
